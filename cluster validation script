@@ -1,0 +1,71 @@
+#!/bin/bash
+
+source_env=${1:-""}
+dest_env=${2:-""}
+pane=${3:-""}
+
+temp_file_source=$(mktemp)
+temp_file_dest=$(mktemp)
+
+check_source()
+{
+contexts=$(kubectl config get-contexts \
+            | cut -c11- \
+            | awk '{print $1}' \
+            | grep -v srv \
+            | grep $source_env \
+            | grep $pane)
+
+rm /tmp/source_version.txt
+for context in "$contexts"; do
+    kubectl config use-context $context
+    ## Fetch helm information 
+    helm ls -q > $temp_file_source
+    for SOURCE in `cat $temp_file_source`
+    do
+      APP="$SOURCE"
+      VERSION=`helm list $SOURCE | awk 'NR==2' | awk '{print $9}'`
+      echo "$APP -> $VERSION" >> /tmp/source_version.txt
+    done
+    rm $temp_file_source
+done
+}
+
+check_dest()
+{
+contexts=$(kubectl config get-contexts \
+            | cut -c11- \
+            | awk '{print $1}' \
+            | grep -v srv \
+            | grep $dest_env \
+            | grep $pane)
+
+rm /tmp/dest_version.txt
+for context in "$contexts"; do
+    kubectl config use-context $context
+    ## Fetch helm information 
+    helm ls -q > $temp_file_dest
+    for SOURCE in `cat $temp_file_dest`
+    do
+      APP="$SOURCE"
+      VERSION=`helm list $SOURCE | awk 'NR==2' | awk '{print $9}'`
+      echo "$APP -> $VERSION" >> /tmp/dest_version.txt
+    done
+    rm $temp_file_dest
+done
+}
+
+compare()
+{
+  rm -f diff.txt
+  for APP in `cat /tmp/source_version.txt | awk '{print $1}'`
+  do
+   SOURCE_VERSION=`cat /tmp/source_version.txt | grep -i $APP | awk '{print $3}'`
+   DEST_VERSION=`cat /tmp/dest_version.txt| grep -i $APP | awk '{print $3}'`
+   echo " $APP -> $SOURCE_VERSION -> $DEST_VERSION "
+  done
+}
+
+check_source
+check_dest
+compare
